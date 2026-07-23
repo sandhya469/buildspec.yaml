@@ -16,37 +16,26 @@ phases:
 
   pre_build:
     commands:
-      - echo "Logging in to ECR..."
+      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - echo "Logging in to Amazon ECR..."
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
       - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPO_NAME
-      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-8)
-      - echo "Validating SAM template..."
-      - sam validate --template app-template.yaml
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
 
   build:
     commands:
       - echo "Building Docker image..."
-      - docker build -t $REPOSITORY_URI:$IMAGE_TAG -t $REPOSITORY_URI:latest ./backend
-      - echo "Pushing image to ECR..."
-      - docker push $REPOSITORY_URI:$IMAGE_TAG
-      - docker push $REPOSITORY_URI:latest
-      - echo "Running sam build..."
-      - sam build --use-container --template app-template.yaml
+      - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
+      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
 
   post_build:
     commands:
-      - echo "Deploying with sam deploy..."
-      - >
-        sam deploy
-        --template app-template.yaml
-        --stack-name $STACK_NAME
-        --region $AWS_DEFAULT_REGION
-        --s3-bucket $S3_BUCKET_FOR_SAM_ARTIFACTS
-        --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
-        --parameter-overrides LambdaImageUri=$REPOSITORY_URI:$IMAGE_TAG
-        --no-confirm-changeset --no-fail-on-empty-changeset
+      - echo "Pushing Docker image to ECR..."
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - docker push $REPOSITORY_URI:latest
+      - echo "Deploying SAM stack..."
+      - sam deploy --stack-name $STACK_NAME --image-repository $REPOSITORY_URI --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset
 
 artifacts:
   files:
     - '**/*'
-  base-directory: .aws-sam/build
