@@ -1,17 +1,15 @@
 version: 0.2
 
 # AWS CodeBuild pipeline for the React + Django SAM template.
-# Build -> push Docker image to ECR -> validate SAM template -> sam build -> sam deploy
+# Phase 1 (this version): validate -> sam build
+# Docker/ECR push and sam deploy are added back once ECR + deploy IAM
+# permissions are wired into the CodeBuild service role.
 
 env:
   variables:
     AWS_DEFAULT_REGION: "eu-north-1"
     ECR_REPO_NAME: "django-backend"
     STACK_NAME: "sam-prod-stack"
-  # Set these as CodeBuild environment variables (Plaintext or Secrets Manager) in the console/pipeline,
-  # not hardcoded here:
-  #   AWS_ACCOUNT_ID
-  #   S3_BUCKET_FOR_SAM_ARTIFACTS
 
 phases:
   install:
@@ -23,43 +21,19 @@ phases:
 
   pre_build:
     commands:
-      - echo "Logging in to Amazon ECR..."
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
-      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPO_NAME
-      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-8)
       - echo "Validating SAM template..."
       - sam validate --template app-template.yaml
 
   build:
     commands:
-      - echo "Building Docker image for Django backend..."
-      - docker build -t $REPOSITORY_URI:$IMAGE_TAG -t $REPOSITORY_URI:latest ./backend
-      - echo "Pushing image to ECR..."
-      - docker push $REPOSITORY_URI:$IMAGE_TAG
-      - docker push $REPOSITORY_URI:latest
       - echo "Running sam build..."
       - sam build --use-container --template app-template.yaml
 
   post_build:
     commands:
-      - echo "Deploying with sam deploy..."
-      - >
-        sam deploy
-        --stack-name $STACK_NAME
-        --region $AWS_DEFAULT_REGION
-        --s3-bucket $S3_BUCKET_FOR_SAM_ARTIFACTS
-        --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
-        --parameter-overrides LambdaImageUri=$REPOSITORY_URI:$IMAGE_TAG
-        --no-confirm-changeset
-        --no-fail-on-empty-changeset
-      - echo "Deployment complete."
-      - aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs" --output table
+      - echo "Build phase complete."
 
 artifacts:
   files:
     - '**/*'
   base-directory: .aws-sam/build
-
-cache:
-  paths:
-    - '/root/.cache/pip/**/*'
