@@ -1,16 +1,13 @@
 version: 0.2
-
 # AWS CodeBuild pipeline for the React + Django SAM template.
 # Phase 1 (this version): validate -> sam build
 # Docker/ECR push and sam deploy are added back once ECR + deploy IAM
 # permissions are wired into the CodeBuild service role.
-
 env:
   variables:
     AWS_DEFAULT_REGION: "eu-north-1"
     ECR_REPO_NAME: "django-backend"
     STACK_NAME: "sam-prod-stack"
-
 phases:
   install:
     runtime-versions:
@@ -18,21 +15,17 @@ phases:
     commands:
       - echo "Installing AWS SAM CLI..."
       - pip install --upgrade aws-sam-cli
-
   pre_build:
     commands:
       - echo "Validating SAM template..."
       - sam validate --template app-template.yaml
-
   build:
     commands:
       - echo "Running sam build..."
       - sam build --use-container --template app-template.yaml
-
   post_build:
     commands:
       - echo "Build phase complete."
-
 artifacts:
   files:
     - '**/*'
